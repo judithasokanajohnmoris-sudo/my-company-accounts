@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date
+from datetime import date, datetime
 import os
 
 # --- SETTINGS ---
@@ -17,32 +17,43 @@ def load_data():
         return df
     
     df = pd.read_csv(FILE_NAME)
-    # Ensure Date is in datetime format for proper sorting
-    df["Date"] = pd.to_datetime(df["Date"], errors='coerce').dt.date.astype(str)
+    
+    # FIX: Convert 'Date' string from CSV back into actual Date Objects for the UI
+    df["Date"] = pd.to_datetime(df["Date"], errors='coerce').dt.date
+    # Fill any failed date conversions with today's date
+    df["Date"] = df["Date"].fillna(date.today())
+    
     df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
     df["Description"] = df["Description"].fillna("").astype(str)
     df["Remarks"] = df["Remarks"].fillna("").astype(str)
+    df["Mode"] = df["Mode"].fillna("Cash").astype(str)
+    df["Type"] = df["Type"].fillna("Company").astype(str)
+    df["Category"] = df["Category"].fillna("Expense").astype(str)
+    
     return df
 
 def save_data(df):
-    # Sort by date before saving to keep things organized like Excel
+    # Sort by date (latest on top)
     df = df.sort_values(by="Date", ascending=False)
-    df.to_csv(FILE_NAME, index=False)
+    # Convert Date objects to strings ONLY for CSV saving
+    df_to_save = df.copy()
+    df_to_save["Date"] = df_to_save["Date"].astype(str)
+    df_to_save.to_csv(FILE_NAME, index=False)
 
 # --- SIDEBAR: NEW ENTRY ---
 st.sidebar.header("➕ Add New Entry")
 with st.sidebar.form("entry_form", clear_on_submit=True):
     entry_date = st.date_input("Date", date.today())
     desc = st.text_input("Description")
-    mode = st.selectbox("Payment Mode", ["Cash", "UPI/Online", "Bank Transfer", "Cheque"])
-    p_type = st.radio("Payment Type", ["Company", "Personal"])
+    mode = st.selectbox("Mode", ["Cash", "UPI/Online", "Bank Transfer", "Cheque"])
+    p_type = st.radio("Type", ["Company", "Personal"])
     cat = st.radio("Category", ["Income", "Expense"])
     amount = st.number_input("Amount (₹)", min_value=0.0, step=100.0)
     remarks = st.text_area("Remarks")
     submit = st.form_submit_button("Save Transaction")
 
 if submit:
-    new_row = pd.DataFrame([[str(entry_date), desc, mode, p_type, cat, amount, remarks]], 
+    new_row = pd.DataFrame([[entry_date, desc, mode, p_type, cat, amount, remarks]], 
                             columns=["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"])
     current_df = load_data()
     updated_df = pd.concat([current_df, new_row], ignore_index=True)
@@ -67,31 +78,32 @@ st.divider()
 
 # --- MANAGE TRANSACTIONS ---
 st.subheader("📝 Manage Transactions")
-st.info("💡 To 'Insert' a row: Add a new row at the bottom using the (+) icon, set the Date, and click Save. The app will automatically move it to the correct position.")
 
-# Filter/Search
 search_query = st.text_input("🔍 Search entries...", "").lower()
 if search_query:
-    display_df = data[data['Description'].str.lower().str.contains(search_query) | data['Remarks'].str.lower().str.contains(search_query)]
+    display_df = data[data['Description'].str.lower().str.contains(search_query) | 
+                      data['Remarks'].str.lower().str.contains(search_query)]
 else:
     display_df = data
 
-# Data Editor
+# FIXED EDITOR: This will no longer throw a Type Compatibility error
 edited_df = st.data_editor(
     display_df,
-    num_rows="dynamic", # This allows you to add/delete rows
+    num_rows="dynamic",
     use_container_width=True,
     column_config={
+        "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY", required=True),
         "Mode": st.column_config.SelectboxColumn("Mode", options=["Cash", "UPI/Online", "Bank Transfer", "Cheque"]),
         "Type": st.column_config.SelectboxColumn("Type", options=["Company", "Personal"]),
         "Category": st.column_config.SelectboxColumn("Category", options=["Income", "Expense"]),
-        "Date": st.column_config.DateColumn("Date")
-    }
+        "Amount": st.column_config.NumberColumn("Amount (₹)", format="₹%.2f")
+    },
+    key="main_editor"
 )
 
 if st.button("💾 Save & Re-organize"):
     save_data(edited_df)
-    st.success("Re-organized by Date!")
+    st.success("Database Updated & Sorted!")
     st.rerun()
 
 st.divider()
