@@ -12,23 +12,20 @@ st.title("📊 Vortex Care: Daily Accounts Manager")
 # --- DATABASE SETUP ---
 def load_data():
     if not os.path.exists(FILE_NAME):
-        # Create empty file with correct columns if not exists
         df = pd.DataFrame(columns=["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"])
         df.to_csv(FILE_NAME, index=False)
         return df
     
     df = pd.read_csv(FILE_NAME)
-    # Ensure columns exist
-    cols = ["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"]
-    for col in cols:
-        if col not in df.columns:
-            df[col] = ""
-            
-    # CRITICAL FIX: Convert everything to string first, then handle numbers
-    df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
-    df["Description"] = df["Description"].fillna("").astype(str)
-    df["Remarks"] = df["Remarks"].fillna("").astype(str)
+    
+    # CRITICAL: Force columns to be the correct type before editing
     df["Date"] = df["Date"].astype(str)
+    df["Description"] = df["Description"].fillna("").astype(str)
+    df["Mode"] = df["Mode"].fillna("Cash").astype(str)
+    df["Type"] = df["Type"].fillna("Company").astype(str)
+    df["Category"] = df["Category"].fillna("Expense").astype(str)
+    df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
+    df["Remarks"] = df["Remarks"].fillna("").astype(str)
     return df
 
 def save_data(df):
@@ -39,9 +36,12 @@ st.sidebar.header("➕ Add New Entry")
 with st.sidebar.form("entry_form", clear_on_submit=True):
     entry_date = st.date_input("Date", date.today())
     desc = st.text_input("Description")
-    mode = st.selectbox("Payment Mode", ["Cash", "UPI/Online", "Bank Transfer", "Cheque"])
-    p_type = st.radio("Payment Type", ["Company", "Personal"])
-    cat = st.radio("Category", ["Income", "Expense"])
+    mode_options = ["Cash", "UPI/Online", "Bank Transfer", "Cheque"]
+    mode = st.selectbox("Payment Mode", mode_options)
+    type_options = ["Company", "Personal"]
+    p_type = st.radio("Payment Type", type_options)
+    cat_options = ["Income", "Expense"]
+    cat = st.radio("Category", cat_options)
     amount = st.number_input("Amount (₹)", min_value=0.0, step=100.0)
     remarks = st.text_area("Remarks")
     submit = st.form_submit_button("Save Transaction")
@@ -55,7 +55,7 @@ if submit:
     st.sidebar.success("Saved!")
     st.rerun()
 
-# --- CALCULATIONS & METRICS ---
+# --- CALCULATIONS ---
 data = load_data()
 company_only = data[data['Type'] == 'Company']
 total_inc = company_only[company_only['Category'] == 'Income']['Amount'].sum()
@@ -72,11 +72,8 @@ st.divider()
 
 # --- SEARCH & EDIT SECTION ---
 st.subheader("📝 Manage Transactions")
-
-# Search bar
 search_query = st.text_input("🔍 Search by Description or Remarks", "").lower()
 
-# Filter logic with explicit string conversion for search
 if search_query:
     filtered_df = data[
         data['Description'].str.lower().str.contains(search_query, na=False) | 
@@ -85,14 +82,25 @@ if search_query:
 else:
     filtered_df = data
 
-# Data Editor
-edited_df = st.data_editor(filtered_df, num_rows="dynamic", use_container_width=True, key="main_editor")
+# NEW: Explicit column configuration to allow text and dropdowns
+edited_df = st.data_editor(
+    filtered_df,
+    num_rows="dynamic",
+    use_container_width=True,
+    column_config={
+        "Mode": st.column_config.SelectboxColumn("Payment Mode", options=["Cash", "UPI/Online", "Bank Transfer", "Cheque"]),
+        "Type": st.column_config.SelectboxColumn("Payment Type", options=["Company", "Personal"]),
+        "Category": st.column_config.SelectboxColumn("Category", options=["Income", "Expense"]),
+        "Amount": st.column_config.NumberColumn("Amount (₹)", format="₹%.2f"),
+        "Date": st.column_config.TextColumn("Date (YYYY-MM-DD)")
+    },
+    key="main_editor"
+)
 
 if st.button("💾 Save All Changes"):
     if search_query == "":
         save_data(edited_df)
     else:
-        # If filtered, merge the edited rows back into the original data
         data.update(edited_df)
         save_data(data)
     st.success("Database Updated!")
@@ -103,7 +111,6 @@ st.divider()
 # --- DOWNLOADS ---
 st.subheader("📥 Download CSV Reports")
 col1, col2, col3 = st.columns(3)
-
 with col1:
     st.download_button("🟢 Master Data (All)", data.to_csv(index=False).encode('utf-8'), "Master_Accounts.csv", "text/csv")
 with col2:
