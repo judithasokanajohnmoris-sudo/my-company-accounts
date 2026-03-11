@@ -6,7 +6,7 @@ import os
 # --- SETTINGS ---
 FILE_NAME = "my_accounts.csv"
 
-st.set_page_config(page_title="Company Ledger Pro", layout="wide")
+st.set_page_config(page_title="Vortex Care Accounts", layout="wide")
 st.title("📊 Daily Accounts Manager")
 
 # --- DATABASE SETUP ---
@@ -15,7 +15,10 @@ if not os.path.exists(FILE_NAME):
     df.to_csv(FILE_NAME, index=False)
 
 def load_data():
-    return pd.read_csv(FILE_NAME)
+    df = pd.read_csv(FILE_NAME)
+    # Ensure Amount is numeric to avoid calculation errors
+    df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
+    return df
 
 def save_data(df):
     df.to_csv(FILE_NAME, index=False)
@@ -41,45 +44,46 @@ if submit:
     st.sidebar.success("Saved!")
     st.rerun()
 
-# --- MAIN DASHBOARD ---
+# --- CALCULATIONS & METRICS ---
 data = load_data()
 
-# 1. EDITING SECTION
+# Filter for Company only for the main profit calculation
+company_only = data[data['Type'] == 'Company']
+total_inc = company_only[company_only['Category'] == 'Income']['Amount'].sum()
+total_exp = company_only[company_only['Category'] == 'Expense']['Amount'].sum()
+net_profit = total_inc - total_exp
+
+# UI for Metrics
+st.subheader("Business Summary (Company Only)")
+m1, m2, m3 = st.columns(3)
+m1.metric("Total Income", f"₹{total_inc:,.2f}")
+m2.metric("Total Expense", f"₹{total_exp:,.2f}")
+m3.metric("Net Profit", f"₹{net_profit:,.2f}", delta=float(net_profit))
+
+st.divider()
+
+# --- EDITING SECTION ---
 st.subheader("📝 Edit & Manage Transactions")
-st.info("💡 Tip: Double-click any cell to edit. Use the 'Save Changes' button below the table to update your records.")
+st.info("Double-click any cell to edit. To delete, select a row and press 'Delete' on your keyboard. Click 'Save' below.")
 
-# Use data_editor to allow live editing
-edited_df = st.data_editor(data, num_rows="dynamic", use_container_width=True, key="editor")
+# Data Editor
+edited_df = st.data_editor(data, num_rows="dynamic", use_container_width=True, key="main_editor")
 
-if st.button("💾 Save All Changes"):
+if st.button("💾 Save Changes to Database"):
     save_data(edited_df)
-    st.success("All changes have been saved to the database!")
+    st.success("Changes saved successfully!")
     st.rerun()
 
 st.divider()
 
-# 2. SEPARATE DOWNLOADS
-st.subheader("📥 Download Reports")
+# --- REPORTS SECTION ---
+st.subheader("📥 Download Separate Reports")
 col_comp, col_pers = st.columns(2)
 
-# Filter data
-company_df = data[data['Type'] == 'Company']
-personal_df = data[data['Type'] == 'Personal']
-
 with col_comp:
-    st.write(f"**Company Records:** {len(company_df)} entries")
-    st.download_button(
-        label="Download Company Transactions (CSV)",
-        data=company_df.to_csv(index=False).encode('utf-8'),
-        file_name=f"company_accounts_{date.today()}.csv",
-        mime="text/csv"
-    )
+    comp_csv = data[data['Type'] == 'Company'].to_csv(index=False).encode('utf-8')
+    st.download_button("Download Company CSV", data=comp_csv, file_name="company_report.csv", mime="text/csv")
 
 with col_pers:
-    st.write(f"**Personal Records:** {len(personal_df)} entries")
-    st.download_button(
-        label="Download Personal Transactions (CSV)",
-        data=personal_df.to_csv(index=False).encode('utf-8'),
-        file_name=f"personal_accounts_{date.today()}.csv",
-        mime="text/csv"
-    )
+    pers_csv = data[data['Type'] == 'Personal'].to_csv(index=False).encode('utf-8')
+    st.download_button("Download Personal CSV", data=pers_csv, file_name="personal_report.csv", mime="text/csv")
