@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
+from datetime import date
 import os
 
 # --- SETTINGS ---
@@ -18,11 +18,11 @@ def load_data():
     
     df = pd.read_csv(FILE_NAME)
     
-    # FIX: Convert 'Date' string from CSV back into actual Date Objects for the UI
+    # Convert Date strings to Date Objects for the Editor
     df["Date"] = pd.to_datetime(df["Date"], errors='coerce').dt.date
-    # Fill any failed date conversions with today's date
     df["Date"] = df["Date"].fillna(date.today())
     
+    # Ensure types are correct
     df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
     df["Description"] = df["Description"].fillna("").astype(str)
     df["Remarks"] = df["Remarks"].fillna("").astype(str)
@@ -33,9 +33,8 @@ def load_data():
     return df
 
 def save_data(df):
-    # Sort by date (latest on top)
+    # Hidden Logic: Automatically sorts by date so the user doesn't have to
     df = df.sort_values(by="Date", ascending=False)
-    # Convert Date objects to strings ONLY for CSV saving
     df_to_save = df.copy()
     df_to_save["Date"] = df_to_save["Date"].astype(str)
     df_to_save.to_csv(FILE_NAME, index=False)
@@ -86,7 +85,7 @@ if search_query:
 else:
     display_df = data
 
-# FIXED EDITOR: This will no longer throw a Type Compatibility error
+# Data Editor
 edited_df = st.data_editor(
     display_df,
     num_rows="dynamic",
@@ -101,9 +100,10 @@ edited_df = st.data_editor(
     key="main_editor"
 )
 
-if st.button("💾 Save & Re-organize"):
+# CHANGED: Just a simple "Save Changes" button
+if st.button("💾 Save Changes"):
     save_data(edited_df)
-    st.success("Database Updated & Sorted!")
+    st.success("Changes Saved!")
     st.rerun()
 
 st.divider()
@@ -111,6 +111,6 @@ st.divider()
 # --- DOWNLOADS ---
 st.subheader("📥 Export Reports")
 c1, c2, c3 = st.columns(3)
-c1.download_button("🟢 Master CSV", data.to_csv(index=False).encode('utf-8'), "Master_Data.csv")
+c1.download_button("🟢 Master CSV (All)", data.to_csv(index=False).encode('utf-8'), "Master_Data.csv")
 c2.download_button("Company CSV", company_only.to_csv(index=False).encode('utf-8'), "Company_Report.csv")
 c3.download_button("Personal CSV", data[data['Type']=='Personal'].to_csv(index=False).encode('utf-8'), "Personal_Report.csv")
