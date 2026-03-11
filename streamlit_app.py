@@ -2,12 +2,11 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import os
-import io
 
 # --- SETTINGS ---
 FILE_NAME = "my_accounts.csv"
 
-st.set_page_config(page_title="Vortex Care Accounts Pro", layout="wide")
+st.set_page_config(page_title="Vortex Care Accounts", layout="wide")
 st.title("📊 Daily Accounts Manager")
 
 # --- DATABASE SETUP ---
@@ -59,43 +58,40 @@ m3.metric("Net Profit", f"₹{net_profit:,.2f}", delta=float(net_profit))
 
 st.divider()
 
-# --- EDITING SECTION ---
-st.subheader("📝 Edit & Manage Transactions")
-edited_df = st.data_editor(data, num_rows="dynamic", use_container_width=True, key="main_editor")
+# --- SEARCH & EDIT SECTION ---
+st.subheader("📝 Manage Transactions")
 
-if st.button("💾 Save Changes to Database"):
-    save_data(edited_df)
-    st.success("Changes saved successfully!")
+# Search bar
+search_query = st.text_input("🔍 Search by Description or Remarks", "").lower()
+filtered_df = data[
+    data['Description'].str.lower().str.contains(search_query, na=False) | 
+    data['Remarks'].str.lower().str.contains(search_query, na=False)
+]
+
+# Data Editor (using filtered data)
+edited_df = st.data_editor(filtered_df, num_rows="dynamic", use_container_width=True, key="main_editor")
+
+if st.button("💾 Save Changes"):
+    # If a search was active, we merge the edited filtered data back into the main data
+    data.update(edited_df)
+    save_data(edited_df if search_query == "" else data)
+    st.success("Database Updated!")
     st.rerun()
 
 st.divider()
 
-# --- REPORTS SECTION ---
-st.subheader("📥 Download Reports")
+# --- REPORTS SECTION (ALL CSV) ---
+st.subheader("📥 Download CSV Reports")
 col1, col2, col3 = st.columns(3)
 
-# Function to convert DF to Excel Bytes
-def to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False, sheet_name='Sheet1')
-    return output.getvalue()
-
 with col1:
-    st.write("**Full Master Backup**")
-    st.download_button(
-        label="🟢 Download All Data (Excel)",
-        data=to_excel(data),
-        file_name=f"Master_Accounts_{date.today()}.xlsx",
-        mime="application/vnd.ms-excel"
-    )
+    master_csv = data.to_csv(index=False).encode('utf-8')
+    st.download_button("🟢 Download All Data (CSV)", data=master_csv, file_name="Master_Accounts.csv", mime="text/csv")
 
 with col2:
-    st.write("**Company Only**")
     comp_csv = data[data['Type'] == 'Company'].to_csv(index=False).encode('utf-8')
     st.download_button("Download Company CSV", data=comp_csv, file_name="company_report.csv", mime="text/csv")
 
 with col3:
-    st.write("**Personal Only**")
     pers_csv = data[data['Type'] == 'Personal'].to_csv(index=False).encode('utf-8')
     st.download_button("Download Personal CSV", data=pers_csv, file_name="personal_report.csv", mime="text/csv")
