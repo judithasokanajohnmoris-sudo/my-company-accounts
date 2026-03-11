@@ -18,9 +18,12 @@ def load_data():
     
     df = pd.read_csv(FILE_NAME)
     
-    # Convert Date strings to Date Objects for the Editor
+    # Convert Date strings to Date Objects
     df["Date"] = pd.to_datetime(df["Date"], errors='coerce').dt.date
     df["Date"] = df["Date"].fillna(date.today())
+    
+    # ASCENDING ORDER: Oldest dates at the top, Newest at the bottom
+    df = df.sort_values(by="Date", ascending=True)
     
     # Ensure types are correct
     df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
@@ -33,8 +36,8 @@ def load_data():
     return df
 
 def save_data(df):
-    # Hidden Logic: Automatically sorts by date so the user doesn't have to
-    df = df.sort_values(by="Date", ascending=False)
+    # Keep data in Ascending Order when saving
+    df = df.sort_values(by="Date", ascending=True)
     df_to_save = df.copy()
     df_to_save["Date"] = df_to_save["Date"].astype(str)
     df_to_save.to_csv(FILE_NAME, index=False)
@@ -100,10 +103,9 @@ edited_df = st.data_editor(
     key="main_editor"
 )
 
-# CHANGED: Just a simple "Save Changes" button
 if st.button("💾 Save Changes"):
     save_data(edited_df)
-    st.success("Changes Saved!")
+    st.success("Changes Saved in Ascending Order!")
     st.rerun()
 
 st.divider()
