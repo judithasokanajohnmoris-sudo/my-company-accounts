@@ -7,24 +7,28 @@ import os
 FILE_NAME = "my_accounts.csv"
 
 st.set_page_config(page_title="Vortex Care Accounts", layout="wide")
-st.title("📊 Daily Accounts Manager")
+st.title("📊 Vortex Care: Daily Accounts Manager")
 
 # --- DATABASE SETUP ---
-if not os.path.exists(FILE_NAME):
-    # Initializing columns correctly
-    df = pd.DataFrame(columns=["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"])
-    df.to_csv(FILE_NAME, index=False)
-
 def load_data():
     if not os.path.exists(FILE_NAME):
-        return pd.DataFrame(columns=["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"])
+        # Create empty file with correct columns if not exists
+        df = pd.DataFrame(columns=["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"])
+        df.to_csv(FILE_NAME, index=False)
+        return df
     
     df = pd.read_csv(FILE_NAME)
-    # 1. Ensure Amount is numeric
+    # Ensure columns exist
+    cols = ["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"]
+    for col in cols:
+        if col not in df.columns:
+            df[col] = ""
+            
+    # CRITICAL FIX: Convert everything to string first, then handle numbers
     df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
-    # 2. FIX: Force text columns to be strings to prevent search errors
-    df["Description"] = df["Description"].astype(str).replace('nan', '')
-    df["Remarks"] = df["Remarks"].astype(str).replace('nan', '')
+    df["Description"] = df["Description"].fillna("").astype(str)
+    df["Remarks"] = df["Remarks"].fillna("").astype(str)
+    df["Date"] = df["Date"].astype(str)
     return df
 
 def save_data(df):
@@ -72,20 +76,23 @@ st.subheader("📝 Manage Transactions")
 # Search bar
 search_query = st.text_input("🔍 Search by Description or Remarks", "").lower()
 
-# Filter logic - The .astype(str) here is a double-safety measure
-filtered_df = data[
-    data['Description'].str.lower().contains(search_query, na=False) | 
-    data['Remarks'].str.lower().contains(search_query, na=False)
-]
+# Filter logic with explicit string conversion for search
+if search_query:
+    filtered_df = data[
+        data['Description'].str.lower().str.contains(search_query, na=False) | 
+        data['Remarks'].str.lower().str.contains(search_query, na=False)
+    ]
+else:
+    filtered_df = data
 
 # Data Editor
 edited_df = st.data_editor(filtered_df, num_rows="dynamic", use_container_width=True, key="main_editor")
 
-if st.button("💾 Save Changes"):
+if st.button("💾 Save All Changes"):
     if search_query == "":
         save_data(edited_df)
     else:
-        # Merge edited filtered data back into the main database
+        # If filtered, merge the edited rows back into the original data
         data.update(edited_df)
         save_data(data)
     st.success("Database Updated!")
@@ -93,18 +100,13 @@ if st.button("💾 Save Changes"):
 
 st.divider()
 
-# --- REPORTS SECTION ---
+# --- DOWNLOADS ---
 st.subheader("📥 Download CSV Reports")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    master_csv = data.to_csv(index=False).encode('utf-8')
-    st.download_button("🟢 Download All Data (CSV)", data=master_csv, file_name="Master_Accounts.csv", mime="text/csv")
-
+    st.download_button("🟢 Master Data (All)", data.to_csv(index=False).encode('utf-8'), "Master_Accounts.csv", "text/csv")
 with col2:
-    comp_csv = data[data['Type'] == 'Company'].to_csv(index=False).encode('utf-8')
-    st.download_button("Download Company CSV", data=comp_csv, file_name="company_report.csv", mime="text/csv")
-
+    st.download_button("Company Report", data[data['Type'] == 'Company'].to_csv(index=False).encode('utf-8'), "Company_Report.csv", "text/csv")
 with col3:
-    pers_csv = data[data['Type'] == 'Personal'].to_csv(index=False).encode('utf-8')
-    st.download_button("Download Personal CSV", data=pers_csv, file_name="personal_report.csv", mime="text/csv")
+    st.download_button("Personal Report", data[data['Type'] == 'Personal'].to_csv(index=False).encode('utf-8'), "Personal_Report.csv", "text/csv")
