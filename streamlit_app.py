@@ -17,18 +17,16 @@ def load_data():
         return df
     
     df = pd.read_csv(FILE_NAME)
-    
-    # CRITICAL: Force columns to be the correct type before editing
-    df["Date"] = df["Date"].astype(str)
-    df["Description"] = df["Description"].fillna("").astype(str)
-    df["Mode"] = df["Mode"].fillna("Cash").astype(str)
-    df["Type"] = df["Type"].fillna("Company").astype(str)
-    df["Category"] = df["Category"].fillna("Expense").astype(str)
+    # Ensure Date is in datetime format for proper sorting
+    df["Date"] = pd.to_datetime(df["Date"], errors='coerce').dt.date.astype(str)
     df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
+    df["Description"] = df["Description"].fillna("").astype(str)
     df["Remarks"] = df["Remarks"].fillna("").astype(str)
     return df
 
 def save_data(df):
+    # Sort by date before saving to keep things organized like Excel
+    df = df.sort_values(by="Date", ascending=False)
     df.to_csv(FILE_NAME, index=False)
 
 # --- SIDEBAR: NEW ENTRY ---
@@ -36,12 +34,9 @@ st.sidebar.header("➕ Add New Entry")
 with st.sidebar.form("entry_form", clear_on_submit=True):
     entry_date = st.date_input("Date", date.today())
     desc = st.text_input("Description")
-    mode_options = ["Cash", "UPI/Online", "Bank Transfer", "Cheque"]
-    mode = st.selectbox("Payment Mode", mode_options)
-    type_options = ["Company", "Personal"]
-    p_type = st.radio("Payment Type", type_options)
-    cat_options = ["Income", "Expense"]
-    cat = st.radio("Category", cat_options)
+    mode = st.selectbox("Payment Mode", ["Cash", "UPI/Online", "Bank Transfer", "Cheque"])
+    p_type = st.radio("Payment Type", ["Company", "Personal"])
+    cat = st.radio("Category", ["Income", "Expense"])
     amount = st.number_input("Amount (₹)", min_value=0.0, step=100.0)
     remarks = st.text_area("Remarks")
     submit = st.form_submit_button("Save Transaction")
@@ -70,50 +65,40 @@ m3.metric("Net Profit", f"₹{net_profit:,.2f}", delta=float(net_profit))
 
 st.divider()
 
-# --- SEARCH & EDIT SECTION ---
+# --- MANAGE TRANSACTIONS ---
 st.subheader("📝 Manage Transactions")
-search_query = st.text_input("🔍 Search by Description or Remarks", "").lower()
+st.info("💡 To 'Insert' a row: Add a new row at the bottom using the (+) icon, set the Date, and click Save. The app will automatically move it to the correct position.")
 
+# Filter/Search
+search_query = st.text_input("🔍 Search entries...", "").lower()
 if search_query:
-    filtered_df = data[
-        data['Description'].str.lower().str.contains(search_query, na=False) | 
-        data['Remarks'].str.lower().str.contains(search_query, na=False)
-    ]
+    display_df = data[data['Description'].str.lower().str.contains(search_query) | data['Remarks'].str.lower().str.contains(search_query)]
 else:
-    filtered_df = data
+    display_df = data
 
-# NEW: Explicit column configuration to allow text and dropdowns
+# Data Editor
 edited_df = st.data_editor(
-    filtered_df,
-    num_rows="dynamic",
+    display_df,
+    num_rows="dynamic", # This allows you to add/delete rows
     use_container_width=True,
     column_config={
-        "Mode": st.column_config.SelectboxColumn("Payment Mode", options=["Cash", "UPI/Online", "Bank Transfer", "Cheque"]),
-        "Type": st.column_config.SelectboxColumn("Payment Type", options=["Company", "Personal"]),
+        "Mode": st.column_config.SelectboxColumn("Mode", options=["Cash", "UPI/Online", "Bank Transfer", "Cheque"]),
+        "Type": st.column_config.SelectboxColumn("Type", options=["Company", "Personal"]),
         "Category": st.column_config.SelectboxColumn("Category", options=["Income", "Expense"]),
-        "Amount": st.column_config.NumberColumn("Amount (₹)", format="₹%.2f"),
-        "Date": st.column_config.TextColumn("Date (YYYY-MM-DD)")
-    },
-    key="main_editor"
+        "Date": st.column_config.DateColumn("Date")
+    }
 )
 
-if st.button("💾 Save All Changes"):
-    if search_query == "":
-        save_data(edited_df)
-    else:
-        data.update(edited_df)
-        save_data(data)
-    st.success("Database Updated!")
+if st.button("💾 Save & Re-organize"):
+    save_data(edited_df)
+    st.success("Re-organized by Date!")
     st.rerun()
 
 st.divider()
 
 # --- DOWNLOADS ---
-st.subheader("📥 Download CSV Reports")
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.download_button("🟢 Master Data (All)", data.to_csv(index=False).encode('utf-8'), "Master_Accounts.csv", "text/csv")
-with col2:
-    st.download_button("Company Report", data[data['Type'] == 'Company'].to_csv(index=False).encode('utf-8'), "Company_Report.csv", "text/csv")
-with col3:
-    st.download_button("Personal Report", data[data['Type'] == 'Personal'].to_csv(index=False).encode('utf-8'), "Personal_Report.csv", "text/csv")
+st.subheader("📥 Export Reports")
+c1, c2, c3 = st.columns(3)
+c1.download_button("🟢 Master CSV", data.to_csv(index=False).encode('utf-8'), "Master_Data.csv")
+c2.download_button("Company CSV", company_only.to_csv(index=False).encode('utf-8'), "Company_Report.csv")
+c3.download_button("Personal CSV", data[data['Type']=='Personal'].to_csv(index=False).encode('utf-8'), "Personal_Report.csv")
