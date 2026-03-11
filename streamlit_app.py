@@ -6,16 +6,8 @@ import os
 # --- SETTINGS ---
 FILE_NAME = "my_accounts.csv"
 
-st.set_page_config(page_title="Company Ledger (INR)", layout="wide")
-st.title("📊 Daily Accounts Manager (Rupees)")
-
-# --- INDIAN CURRENCY FORMATTER ---
-def format_inr(number):
-    """Formats numbers to Indian style: ₹ 1,00,000.00"""
-    s = f"{number:,.2f}"
-    # This replaces the logic to move commas for Indian numbering if needed
-    # For simplicity in this app, we use standard commas but with the ₹ symbol
-    return f"₹ {s}"
+st.set_page_config(page_title="Company Ledger Pro", layout="wide")
+st.title("📊 Daily Accounts Manager")
 
 # --- DATABASE SETUP ---
 if not os.path.exists(FILE_NAME):
@@ -25,51 +17,69 @@ if not os.path.exists(FILE_NAME):
 def load_data():
     return pd.read_csv(FILE_NAME)
 
-# --- SIDEBAR: INPUT DATA ---
-st.sidebar.header("Add New Entry")
+def save_data(df):
+    df.to_csv(FILE_NAME, index=False)
+
+# --- SIDEBAR: NEW ENTRY ---
+st.sidebar.header("➕ Add New Entry")
 with st.sidebar.form("entry_form", clear_on_submit=True):
     entry_date = st.date_input("Date", date.today())
     desc = st.text_input("Description")
     mode = st.selectbox("Payment Mode", ["Cash", "UPI/Online", "Bank Transfer", "Cheque"])
     p_type = st.radio("Payment Type", ["Company", "Personal"])
     cat = st.radio("Category", ["Income", "Expense"])
-    amount = st.number_input("Amount (in ₹)", min_value=0.0, step=100.0)
+    amount = st.number_input("Amount (₹)", min_value=0.0, step=100.0)
     remarks = st.text_area("Remarks")
-    
     submit = st.form_submit_button("Save Transaction")
 
 if submit:
-    new_data = pd.DataFrame([[entry_date, desc, mode, p_type, cat, amount, remarks]], 
+    new_row = pd.DataFrame([[str(entry_date), desc, mode, p_type, cat, amount, remarks]], 
                             columns=["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"])
-    new_data.to_csv(FILE_NAME, mode='a', header=False, index=False)
-    st.sidebar.success("Saved successfully!")
+    current_df = load_data()
+    updated_df = pd.concat([current_df, new_row], ignore_index=True)
+    save_data(updated_df)
+    st.sidebar.success("Saved!")
+    st.rerun()
 
 # --- MAIN DASHBOARD ---
 data = load_data()
 
-# Calculate Business Stats (Company only)
-company_data = data[data['Type'] == 'Company']
-total_income = company_data[company_data['Category'] == 'Income']['Amount'].sum()
-total_expense = company_data[company_data['Category'] == 'Expense']['Amount'].sum()
-net_profit = total_income - total_expense
+# 1. EDITING SECTION
+st.subheader("📝 Edit & Manage Transactions")
+st.info("💡 Tip: Double-click any cell to edit. Use the 'Save Changes' button below the table to update your records.")
 
-# Display Metrics
-col1, col2, col3 = st.columns(3)
-col1.metric("Business Income", format_inr(total_income))
-col2.metric("Business Expense", format_inr(total_expense))
-col3.metric("Net Profit", format_inr(net_profit), delta=float(net_profit))
+# Use data_editor to allow live editing
+edited_df = st.data_editor(data, num_rows="dynamic", use_container_width=True, key="editor")
+
+if st.button("💾 Save All Changes"):
+    save_data(edited_df)
+    st.success("All changes have been saved to the database!")
+    st.rerun()
 
 st.divider()
 
-# Data Table with Rupee Formatting
-st.subheader("Transaction History")
+# 2. SEPARATE DOWNLOADS
+st.subheader("📥 Download Reports")
+col_comp, col_pers = st.columns(2)
 
-# Apply formatting to the 'Amount' column for display
-display_df = data.copy()
-display_df['Amount'] = display_df['Amount'].apply(format_inr)
+# Filter data
+company_df = data[data['Type'] == 'Company']
+personal_df = data[data['Type'] == 'Personal']
 
-st.dataframe(display_df.sort_values(by="Date", ascending=False), use_container_width=True)
+with col_comp:
+    st.write(f"**Company Records:** {len(company_df)} entries")
+    st.download_button(
+        label="Download Company Transactions (CSV)",
+        data=company_df.to_csv(index=False).encode('utf-8'),
+        file_name=f"company_accounts_{date.today()}.csv",
+        mime="text/csv"
+    )
 
-# Download Button
-csv = data.to_csv(index=False).encode('utf-8')
-st.download_button("Download Report (CSV)", data=csv, file_name="accounts_report.csv", mime="text/csv")
+with col_pers:
+    st.write(f"**Personal Records:** {len(personal_df)} entries")
+    st.download_button(
+        label="Download Personal Transactions (CSV)",
+        data=personal_df.to_csv(index=False).encode('utf-8'),
+        file_name=f"personal_accounts_{date.today()}.csv",
+        mime="text/csv"
+    )
