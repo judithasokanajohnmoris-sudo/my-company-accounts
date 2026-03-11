@@ -17,12 +17,8 @@ def load_data():
         return df
     
     df = pd.read_csv(FILE_NAME)
-    
-    # Convert Date strings to Date Objects
     df["Date"] = pd.to_datetime(df["Date"], errors='coerce').dt.date
     df["Date"] = df["Date"].fillna(date.today())
-    
-    # ASCENDING ORDER: Oldest dates at the top, Newest at the bottom
     df = df.sort_values(by="Date", ascending=True)
     
     # Ensure types are correct
@@ -36,7 +32,6 @@ def load_data():
     return df
 
 def save_data(df):
-    # Keep data in Ascending Order when saving
     df = df.sort_values(by="Date", ascending=True)
     df_to_save = df.copy()
     df_to_save["Date"] = df_to_save["Date"].astype(str)
@@ -65,16 +60,36 @@ if submit:
 
 # --- CALCULATIONS ---
 data = load_data()
+
+# 1. Overall Business Metrics (Company Only)
 company_only = data[data['Type'] == 'Company']
 total_inc = company_only[company_only['Category'] == 'Income']['Amount'].sum()
 total_exp = company_only[company_only['Category'] == 'Expense']['Amount'].sum()
 net_profit = total_inc - total_exp
 
-st.subheader("Business Summary (Company Only)")
+# 2. Cash & Bank Balance (All Transactions)
+# Cash Balance
+cash_inc = data[(data['Mode'] == 'Cash') & (data['Category'] == 'Income')]['Amount'].sum()
+cash_exp = data[(data['Mode'] == 'Cash') & (data['Category'] == 'Expense')]['Amount'].sum()
+total_cash = cash_inc - cash_exp
+
+# Bank Balance (UPI + Bank Transfer + Cheque)
+bank_modes = ["UPI/Online", "Bank Transfer", "Cheque"]
+bank_inc = data[data['Mode'].isin(bank_modes) & (data['Category'] == 'Income')]['Amount'].sum()
+bank_exp = data[data['Mode'].isin(bank_modes) & (data['Category'] == 'Expense')]['Amount'].sum()
+total_bank = bank_inc - bank_exp
+
+# --- DISPLAY METRICS ---
+st.subheader("Business Profit & Loss")
 m1, m2, m3 = st.columns(3)
 m1.metric("Total Income", f"₹{total_inc:,.2f}")
 m2.metric("Total Expense", f"₹{total_exp:,.2f}")
 m3.metric("Net Profit", f"₹{net_profit:,.2f}", delta=float(net_profit))
+
+st.subheader("Available Balances")
+b1, b2 = st.columns(2)
+b1.metric("Total Cash on Hand", f"₹{total_cash:,.2f}")
+b2.metric("Total Bank/Online Balance", f"₹{total_bank:,.2f}")
 
 st.divider()
 
@@ -105,7 +120,7 @@ edited_df = st.data_editor(
 
 if st.button("💾 Save Changes"):
     save_data(edited_df)
-    st.success("Changes Saved in Ascending Order!")
+    st.success("Changes Saved & Balances Updated!")
     st.rerun()
 
 st.divider()
