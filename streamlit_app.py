@@ -11,12 +11,20 @@ st.title("📊 Daily Accounts Manager")
 
 # --- DATABASE SETUP ---
 if not os.path.exists(FILE_NAME):
+    # Initializing columns correctly
     df = pd.DataFrame(columns=["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"])
     df.to_csv(FILE_NAME, index=False)
 
 def load_data():
+    if not os.path.exists(FILE_NAME):
+        return pd.DataFrame(columns=["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"])
+    
     df = pd.read_csv(FILE_NAME)
+    # 1. Ensure Amount is numeric
     df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
+    # 2. FIX: Force text columns to be strings to prevent search errors
+    df["Description"] = df["Description"].astype(str).replace('nan', '')
+    df["Remarks"] = df["Remarks"].astype(str).replace('nan', '')
     return df
 
 def save_data(df):
@@ -63,24 +71,29 @@ st.subheader("📝 Manage Transactions")
 
 # Search bar
 search_query = st.text_input("🔍 Search by Description or Remarks", "").lower()
+
+# Filter logic - The .astype(str) here is a double-safety measure
 filtered_df = data[
-    data['Description'].str.lower().str.contains(search_query, na=False) | 
-    data['Remarks'].str.lower().str.contains(search_query, na=False)
+    data['Description'].str.lower().contains(search_query, na=False) | 
+    data['Remarks'].str.lower().contains(search_query, na=False)
 ]
 
-# Data Editor (using filtered data)
+# Data Editor
 edited_df = st.data_editor(filtered_df, num_rows="dynamic", use_container_width=True, key="main_editor")
 
 if st.button("💾 Save Changes"):
-    # If a search was active, we merge the edited filtered data back into the main data
-    data.update(edited_df)
-    save_data(edited_df if search_query == "" else data)
+    if search_query == "":
+        save_data(edited_df)
+    else:
+        # Merge edited filtered data back into the main database
+        data.update(edited_df)
+        save_data(data)
     st.success("Database Updated!")
     st.rerun()
 
 st.divider()
 
-# --- REPORTS SECTION (ALL CSV) ---
+# --- REPORTS SECTION ---
 st.subheader("📥 Download CSV Reports")
 col1, col2, col3 = st.columns(3)
 
