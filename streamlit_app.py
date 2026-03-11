@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import os
+import io
 
 # --- SETTINGS ---
 FILE_NAME = "my_accounts.csv"
 
-st.set_page_config(page_title="Vortex Care Accounts", layout="wide")
+st.set_page_config(page_title="Vortex Care Accounts Pro", layout="wide")
 st.title("📊 Daily Accounts Manager")
 
 # --- DATABASE SETUP ---
@@ -16,7 +17,6 @@ if not os.path.exists(FILE_NAME):
 
 def load_data():
     df = pd.read_csv(FILE_NAME)
-    # Ensure Amount is numeric to avoid calculation errors
     df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
     return df
 
@@ -46,14 +46,11 @@ if submit:
 
 # --- CALCULATIONS & METRICS ---
 data = load_data()
-
-# Filter for Company only for the main profit calculation
 company_only = data[data['Type'] == 'Company']
 total_inc = company_only[company_only['Category'] == 'Income']['Amount'].sum()
 total_exp = company_only[company_only['Category'] == 'Expense']['Amount'].sum()
 net_profit = total_inc - total_exp
 
-# UI for Metrics
 st.subheader("Business Summary (Company Only)")
 m1, m2, m3 = st.columns(3)
 m1.metric("Total Income", f"₹{total_inc:,.2f}")
@@ -64,9 +61,6 @@ st.divider()
 
 # --- EDITING SECTION ---
 st.subheader("📝 Edit & Manage Transactions")
-st.info("Double-click any cell to edit. To delete, select a row and press 'Delete' on your keyboard. Click 'Save' below.")
-
-# Data Editor
 edited_df = st.data_editor(data, num_rows="dynamic", use_container_width=True, key="main_editor")
 
 if st.button("💾 Save Changes to Database"):
@@ -77,13 +71,31 @@ if st.button("💾 Save Changes to Database"):
 st.divider()
 
 # --- REPORTS SECTION ---
-st.subheader("📥 Download Separate Reports")
-col_comp, col_pers = st.columns(2)
+st.subheader("📥 Download Reports")
+col1, col2, col3 = st.columns(3)
 
-with col_comp:
+# Function to convert DF to Excel Bytes
+def to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Sheet1')
+    return output.getvalue()
+
+with col1:
+    st.write("**Full Master Backup**")
+    st.download_button(
+        label="🟢 Download All Data (Excel)",
+        data=to_excel(data),
+        file_name=f"Master_Accounts_{date.today()}.xlsx",
+        mime="application/vnd.ms-excel"
+    )
+
+with col2:
+    st.write("**Company Only**")
     comp_csv = data[data['Type'] == 'Company'].to_csv(index=False).encode('utf-8')
     st.download_button("Download Company CSV", data=comp_csv, file_name="company_report.csv", mime="text/csv")
 
-with col_pers:
+with col3:
+    st.write("**Personal Only**")
     pers_csv = data[data['Type'] == 'Personal'].to_csv(index=False).encode('utf-8')
     st.download_button("Download Personal CSV", data=pers_csv, file_name="personal_report.csv", mime="text/csv")
