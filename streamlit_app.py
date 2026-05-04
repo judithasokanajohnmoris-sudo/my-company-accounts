@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import os
-import plotly.express as px  # Recommended for quick charts
 
 # --- SETTINGS ---
 FILE_NAME = "my_accounts.csv"
 
-st.set_page_config(page_title="Vortex Care Accounts", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Vortex Care Accounts", layout="wide")
+st.title("📊 Vortex Care: Daily Accounts Manager")
 
 # --- DATABASE SETUP ---
 def load_data():
@@ -17,92 +17,120 @@ def load_data():
         return df
     
     df = pd.read_csv(FILE_NAME)
-    df["Date"] = pd.to_datetime(df["Date"]).dt.date
-    df = df.sort_values(by="Date", ascending=False) # Newest first for better visibility
+    df["Date"] = pd.to_datetime(df["Date"], errors='coerce').dt.date
+    df["Date"] = df["Date"].fillna(date.today())
+    df = df.sort_values(by="Date", ascending=True)
+    
+    # Clean types
+    df["Amount"] = pd.to_numeric(df["Amount"], errors='coerce').fillna(0)
+    for col in ["Description", "Remarks", "Mode", "Type", "Category"]:
+        df[col] = df[col].fillna("").astype(str)
+    
     return df
 
 def save_data(df):
+    df = df.sort_values(by="Date", ascending=True)
     df_to_save = df.copy()
     df_to_save["Date"] = df_to_save["Date"].astype(str)
     df_to_save.to_csv(FILE_NAME, index=False)
 
-# Initial Load
-if 'df' not in st.session_state:
-    st.session_state.df = load_data()
-
 # --- SIDEBAR: NEW ENTRY ---
-with st.sidebar:
-    st.header("➕ Add New Entry")
-    with st.form("entry_form", clear_on_submit=True):
-        entry_date = st.date_input("Date", date.today())
-        desc = st.text_input("Description")
-        mode = st.selectbox("Mode", ["Cash", "UPI/Online", "Bank Transfer", "Cheque"])
-        p_type = st.radio("Type", ["Company", "Personal"], horizontal=True)
-        cat = st.radio("Category", ["Income", "Expense"], horizontal=True)
-        amount = st.number_input("Amount (₹)", min_value=0.0, step=100.0)
-        remarks = st.text_area("Remarks")
-        submit = st.form_submit_button("Save Transaction", use_container_width=True)
+st.sidebar.header("➕ Add New Entry")
+with st.sidebar.form("entry_form", clear_on_submit=True):
+    entry_date = st.date_input("Date", date.today())
+    desc = st.text_input("Description")
+    mode = st.selectbox("Mode", ["Cash", "UPI/Online", "Bank Transfer", "Cheque"])
+    p_type = st.radio("Type", ["Company", "Personal"])
+    cat = st.radio("Category", ["Income", "Expense"])
+    amount = st.number_input("Amount (₹)", min_value=0.0, step=100.0)
+    remarks = st.text_area("Remarks")
+    submit = st.form_submit_button("Save Transaction")
 
-    if submit:
-        if desc:
-            new_row = pd.DataFrame([[entry_date, desc, mode, p_type, cat, amount, remarks]], 
-                                    columns=st.session_state.df.columns)
-            st.session_state.df = pd.concat([new_row, st.session_state.df], ignore_index=True)
-            save_data(st.session_state.df)
-            st.success("Transaction Logged!")
-            st.rerun()
-        else:
-            st.error("Please enter a description.")
+if submit:
+    new_row = pd.DataFrame([[entry_date, desc, mode, p_type, cat, amount, remarks]], 
+                            columns=["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"])
+    current_df = load_data()
+    updated_df = pd.concat([current_df, new_row], ignore_index=True)
+    save_data(updated_df)
+    st.sidebar.success("Saved!")
+    st.rerun()
 
-# --- MAIN DASHBOARD ---
-st.title("📊 Vortex Care: Daily Accounts")
+# --- CALCULATIONS ---
+data = load_data()
+company_only = data[data['Type'] == 'Company']
+total_inc = company_only[company_only['Category'] == 'Income']['Amount'].sum()
+total_exp = company_only[company_only['Category'] == 'Expense']['Amount'].sum()
+net_profit = total_inc - total_exp
 
-# Calculations (Company Only)
-company_df = st.session_state.df[st.session_state.df['Type'] == 'Company']
-total_inc = company_df[company_df['Category'] == 'Income']['Amount'].sum()
-total_exp = company_df[company_df['Category'] == 'Expense']['Amount'].sum()
-balance = total_inc - total_exp
-
-# Summary Cards
+st.subheader("Business Summary (Company Only)")
 m1, m2, m3 = st.columns(3)
 m1.metric("Total Income", f"₹{total_inc:,.2f}")
-m2.metric("Total Expenses", f"₹{total_exp:,.2f}")
-m3.metric("Net Balance", f"₹{balance:,.2f}", delta=float(balance))
+m2.metric("Total Expense", f"₹{total_exp:,.2f}")
+m3.metric("Net Profit", f"₹{net_profit:,.2f}", delta=float(net_profit))
 
 st.divider()
 
-# --- SEARCH & EDIT ---
-col_head, col_search = st.columns([2, 1])
-with col_head:
-    st.subheader("📝 Transaction Ledger")
-with col_search:
-    search = st.text_input("", placeholder="🔍 Search description...")
-
-display_df = st.session_state.df
-if search:
-    display_df = display_df[display_df['Description'].str.contains(search, case=False, na=False)]
+# --- MANAGE TRANSACTIONS ---
+st.subheader("📝 Manage Transactions")
+search_query = st.text_input("🔍 Search entries...", "").lower()
+display_df = data[data['Description'].str.lower().str.contains(search_query) | 
+                  data['Remarks'].str.lower().str.contains(search_query)] if search_query else data
 
 edited_df = st.data_editor(
     display_df,
     num_rows="dynamic",
     use_container_width=True,
     column_config={
-        "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY"),
-        "Amount": st.column_config.NumberColumn("Amount (₹)", format="₹%.2f"),
-        "Category": st.column_config.SelectboxColumn("Category", options=["Income", "Expense"]),
-        "Type": st.column_config.SelectboxColumn("Type", options=["Company", "Personal"])
+        "Date": st.column_config.DateColumn("Date", format="DD/MM/YYYY", required=True),
+        "Amount": st.column_config.NumberColumn("Amount (₹)", format="₹%.2f")
     },
-    key="ledger_editor"
+    key="main_editor"
 )
 
-if st.button("💾 Commit Changes to Disk"):
+if st.button("💾 Save Changes"):
     save_data(edited_df)
-    st.session_state.df = edited_df
-    st.toast("Database Updated!", icon="✅")
+    st.success("Changes Saved!")
+    st.rerun()
 
-# --- EXPORTS ---
-with st.expander("📥 Export Reports"):
-    c1, c2, c3 = st.columns(3)
-    csv_all = st.session_state.df.to_csv(index=False).encode('utf-8')
-    c1.download_button("Download All Data", csv_all, "Master_Ledger.csv", "text/csv", use_container_width=True)
-    # Add logic for filtered CSVs here if needed
+st.divider()
+
+# --- NEW: UPLOAD FEATURE ---
+st.subheader("📤 Import Previously Lost Data")
+with st.expander("Click to upload Excel or CSV file"):
+    uploaded_file = st.file_uploader("Choose a file", type=['csv', 'xlsx'])
+    
+    if uploaded_file is not None:
+        try:
+            if uploaded_file.name.endswith('.csv'):
+                up_df = pd.read_csv(uploaded_file)
+            else:
+                up_df = pd.read_excel(uploaded_file)
+            
+            st.write("Preview of Uploaded Data:")
+            st.dataframe(up_df.head(3))
+
+            if st.button("Confirm: Merge with Main Database"):
+                # Ensure columns match our database
+                required_cols = ["Date", "Description", "Mode", "Type", "Category", "Amount", "Remarks"]
+                
+                # Filter only columns that exist in the upload
+                up_df = up_df[[c for c in required_cols if c in up_df.columns]]
+                
+                # Add missing columns with default values
+                for col in required_cols:
+                    if col not in up_df.columns:
+                        up_df[col] = "" if col != "Amount" else 0
+                
+                final_df = pd.concat([data, up_df], ignore_index=True)
+                save_data(final_df)
+                st.success(f"Successfully imported {len(up_df)} records!")
+                st.rerun()
+        except Exception as e:
+            st.error(f"Error: {e}. Ensure your Excel file has headers matching our column names.")
+
+# --- DOWNLOADS ---
+st.subheader("📥 Export Reports")
+c1, c2, c3 = st.columns(3)
+c1.download_button("🟢 Master CSV (All)", data.to_csv(index=False).encode('utf-8'), "Master_Data.csv")
+c2.download_button("Company CSV", company_only.to_csv(index=False).encode('utf-8'), "Company_Report.csv")
+c3.download_button("Personal CSV", data[data['Type']=='Personal'].to_csv(index=False).encode('utf-8'), "Personal_Report.csv")
