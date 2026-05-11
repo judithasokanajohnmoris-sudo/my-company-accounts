@@ -71,10 +71,21 @@ m3.metric("Net Profit", f"₹{net_profit:,.2f}", delta=float(net_profit))
 st.divider()
 
 # --- MANAGE TRANSACTIONS ---
+# --- MANAGE TRANSACTIONS (REVISED) ---
 st.subheader("📝 Manage Transactions")
+
+# Use the full dataset in the editor, but you can use the search to highlight
+# For a robust app, it's safer to edit the full 'data' or handle merging carefully
 search_query = st.text_input("🔍 Search entries...", "").lower()
-display_df = data[data['Description'].str.lower().str.contains(search_query) | 
-                  data['Remarks'].str.lower().str.contains(search_query)] if search_query else data
+
+# To prevent deleting data accidentally:
+# We display the full data but filter the view if searching
+if search_query:
+    filtered_data = data[data['Description'].str.lower().str.contains(search_query)]
+    st.warning("⚠️ Saving while filtered may overwrite hidden rows. Clear search before saving.")
+    display_df = filtered_data
+else:
+    display_df = data
 
 edited_df = st.data_editor(
     display_df,
@@ -88,11 +99,14 @@ edited_df = st.data_editor(
 )
 
 if st.button("💾 Save Changes"):
-    save_data(edited_df)
-    st.success("Changes Saved!")
-    st.rerun()
-
-st.divider()
+    if search_query:
+        # LOGIC: Update only the rows that were visible, keep the rest
+        # This is complex, so simpler is to clear search before saving.
+        st.error("Please clear the search box before saving to prevent data loss.")
+    else:
+        save_data(edited_df)
+        st.success("Changes Saved!")
+        st.rerun()
 
 # --- NEW: UPLOAD FEATURE ---
 st.subheader("📤 Import Previously Lost Data")
